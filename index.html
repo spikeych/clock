@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Uhr 02</title>
+<style>
+  :root { --bg: #000; --on: #ffffff; --accent: #ff9a2e; --off: #0d0d0d; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; cursor: none; }
+  body { display: flex; align-items: center; justify-content: center; }
+  svg { width: 96vw; height: 96vh; transition: transform 2s; }
+  .day { font: 700 28px Arial, Helvetica, sans-serif; fill: var(--on); letter-spacing: 4px; }
+  .day.today { fill: var(--accent); }
+  .lbl { font: 700 18px Arial, Helvetica, sans-serif; fill: var(--accent); }
+  .wx { fill: none; stroke: var(--accent); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+  .wx .mask { fill: var(--bg); }
+  .wx .solid { fill: var(--accent); stroke: none; }
+</style>
+</head>
+<body>
+<svg id="clock" viewBox="0 0 1080 360" preserveAspectRatio="xMidYMid meet"></svg>
+
+<script>
+// Standort nur per URL, damit er nicht in der öffentlichen Seite steht: ?lat=..&lon=..
+// Ohne Standort bleiben Temperatur und Wettersymbol leer.
+//           &offsegments=1  (unbeleuchtete Segmente schwach zeigen)
+const params = new URLSearchParams(location.search);
+const LAT = params.get('lat');
+const LON = params.get('lon');
+const SHOW_OFF = params.get('offsegments') === '1';
+const FORECAST_HOURS = 6;
+
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('clock');
+const el = (tag, attrs, parent = svg) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent.appendChild(e);
+  return e;
+};
+
+const DIGITS = {
+  '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc',
+  '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
+  '-': 'g', ' ': ''
+};
+
+// Sieben-Segment-Ziffer mit spitzen Segmentenden
+function makeDigit(x, y, w, h, t, color) {
+  const g = el('g', { transform: `translate(${x},${y})` });
+  const gap = t * 0.18, s = t / 2;
+  const hor = (cy) => {
+    const x1 = s + gap, x2 = w - s - gap;
+    return `${x1},${cy} ${x1 + s},${cy - s} ${x2 - s},${cy - s} ${x2},${cy} ${x2 - s},${cy + s} ${x1 + s},${cy + s}`;
+  };
+  const ver = (cx, y1, y2) => {
+    y1 += gap; y2 -= gap;
+    return `${cx},${y1} ${cx + s},${y1 + s} ${cx + s},${y2 - s} ${cx},${y2} ${cx - s},${y2 - s} ${cx - s},${y1 + s}`;
+  };
+  const segs = {
+    a: hor(s), g: hor(h / 2), d: hor(h - s),
+    f: ver(s, s, h / 2), b: ver(w - s, s, h / 2),
+    e: ver(s, h / 2, h - s), c: ver(w - s, h / 2, h - s)
+  };
+  const polys = {};
+  for (const k in segs) polys[k] = el('polygon', { points: segs[k] }, g);
+  let current = null;
+  return (ch) => {
+    if (ch === current) return;
+    current = ch;
+    const on = DIGITS[ch] || '';
+    for (const k in polys) {
+      const lit = on.includes(k);
+      polys[k].setAttribute('fill', lit ? color : (SHOW_OFF ? 'var(--off)' : 'none'));
+    }
+  };
+}
+
+const WHITE = 'var(--on)', ORANGE = 'var(--accent)';
+
+// Wochentage links
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const dayEls = DAYS.map((d, i) => {
+  const t = el('text', { x: 22, y: 60 + i * 41.5, class: 'day' });
+  t.textContent = d;
+  return t;
+});
+
+// Große Uhrzeit
+const BW = 120, BH = 290, BT = 26, BY = 35;
+const h1 = makeDigit(190, BY, BW, BH, BT, WHITE);
+const h2 = makeDigit(330, BY, BW, BH, BT, WHITE);
+const m1 = makeDigit(500, BY, BW, BH, BT, WHITE);
+const m2 = makeDigit(640, BY, BW, BH, BT, WHITE);
+const colon = el('g', {});
+el('rect', { x: 462, y: 110, width: 24, height: 24, fill: WHITE }, colon);
+el('rect', { x: 462, y: 228, width: 24, height: 24, fill: WHITE }, colon);
+
+// Rechts oben: Wettersymbol und Temperatur
+const SW = 55, SH = 110, ST = 13;
+const wxIcon = el('g', { class: 'wx', transform: 'translate(793,52) scale(0.84)' });
+const tSign = makeDigit(885, 40, SW, SH, ST, ORANGE);
+const t1 = makeDigit(945, 40, SW, SH, ST, ORANGE);
+const t2 = makeDigit(1005, 40, SW, SH, ST, ORANGE);
+el('text', { x: 1063, y: 58, class: 'lbl' }).textContent = '°C';
+
+// Rechts unten: Datum europäisch – zuerst Tag, dann Monat
+const d1 = makeDigit(800, 205, SW, SH, ST, ORANGE);
+const d2 = makeDigit(860, 205, SW, SH, ST, ORANGE);
+el('text', { x: 918, y: 318, class: 'lbl' }).textContent = 'D';
+const mo1 = makeDigit(945, 205, SW, SH, ST, ORANGE);
+const mo2 = makeDigit(1005, 205, SW, SH, ST, ORANGE);
+el('text', { x: 1063, y: 318, class: 'lbl' }).textContent = 'M';
+
+function twoDigits(n, blankLead) {
+  const s = String(n).padStart(2, blankLead ? ' ' : '0');
+  return [s[0], s[1]];
+}
+
+function tick() {
+  const now = new Date();
+  const [a, b] = twoDigits(now.getHours(), true);
+  const [c, d] = twoDigits(now.getMinutes(), false);
+  h1(a); h2(b); m1(c); m2(d);
+  colon.style.opacity = now.getSeconds() % 2 === 0 ? 1 : 0.15;
+
+  const wd = (now.getDay() + 6) % 7; // Montag = 0
+  dayEls.forEach((e, i) => e.classList.toggle('today', i === wd));
+
+  const [dA, dB] = twoDigits(now.getDate(), true);
+  const [mA, mB] = twoDigits(now.getMonth() + 1, true);
+  d1(dA); d2(dB); mo1(mA); mo2(mB);
+
+  // Gegen Einbrennen: alle paar Minuten minimal verschieben
+  const m = now.getMinutes();
+  svg.style.transform = `translate(${(m % 5) - 2}px, ${(Math.floor(m / 5) % 5) - 2}px)`;
+
+  setTimeout(tick, 1000 - now.getMilliseconds());
+}
+
+// ---------- Wettersymbole (Linienzeichnungen in einem 100x100-Feld) ----------
+const SUN = '<circle cx="50" cy="50" r="18"/>' +
+  [0, 45, 90, 135, 180, 225, 270, 315].map(a =>
+    `<line x1="50" y1="20" x2="50" y2="8" transform="rotate(${a} 50 50)"/>`).join('');
+const MOON = '<path d="M60 14 A36 36 0 1 0 86 66 A28 28 0 1 1 60 14 Z"/>';
+const CLOUD = '<path class="mask" d="M26 80 H74 A17 17 0 0 0 73 46 A24 24 0 0 0 28 50 A15 15 0 0 0 26 80 Z"/>';
+const cloudUp = `<g transform="translate(0,-14)">${CLOUD}</g>`;
+
+function iconSvg(kind, isDay) {
+  const sky = isDay ? SUN : MOON;
+  switch (kind) {
+    case 'clear':  return sky;
+    case 'partly': return `<g transform="translate(-6,-10) scale(0.72)">${sky}</g><g transform="translate(10,8) scale(0.9)">${CLOUD}</g>`;
+    case 'cloudy': return CLOUD;
+    case 'fog':    return `${cloudUp}<line x1="18" y1="80" x2="70" y2="80"/><line x1="30" y1="94" x2="84" y2="94"/>`;
+    case 'rain':   return `${cloudUp}<line x1="36" y1="78" x2="30" y2="94"/><line x1="54" y1="78" x2="48" y2="94"/><line x1="72" y1="78" x2="66" y2="94"/>`;
+    case 'snow':   return `${cloudUp}<circle class="solid" cx="32" cy="86" r="5"/><circle class="solid" cx="52" cy="92" r="5"/><circle class="solid" cx="72" cy="86" r="5"/>`;
+    case 'storm':  return `${cloudUp}<polygon class="solid" points="54,62 36,86 50,86 42,104 66,76 52,76 60,62"/>`;
+    default:       return '';
+  }
+}
+
+// WMO-Wettercode -> Kategorie; höherer Rang = auffälligeres Wetter
+const RANK = ['clear', 'partly', 'cloudy', 'fog', 'rain', 'snow', 'storm'];
+function category(code) {
+  if (code === 0) return 'clear';
+  if (code <= 2) return 'partly';
+  if (code === 3) return 'cloudy';
+  if (code === 45 || code === 48) return 'fog';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  if (code >= 95) return 'storm';
+  if (code >= 51 && code <= 82) return 'rain';
+  return 'cloudy';
+}
+
+function showTemp(temp) {
+  if (temp == null || isNaN(temp)) { tSign(' '); t1('-'); t2('-'); return; }
+  const v = Math.max(-99, Math.min(99, Math.round(temp)));
+  const s = String(Math.abs(v)).padStart(2, ' ');
+  // Minuszeichen im freien Feld links; bei zweistelligen Minusgraden hat es keinen Platz neben dem Symbol
+  tSign(v < 0 ? '-' : ' ');
+  t1(s[0]); t2(s[1]);
+}
+
+async function updateWeather() {
+  if (!LAT || !LON) return;
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+      `&current=temperature_2m,is_day&hourly=weather_code&forecast_hours=${FORECAST_HOURS}&timezone=auto`;
+    const j = await (await fetch(url)).json();
+    showTemp(j.current.temperature_2m);
+    // Symbol zeigt das auffälligste Wetter der nächsten 6 Stunden (z. B. Regen, sobald er kommt)
+    const worst = j.hourly.weather_code
+      .map(category)
+      .reduce((a, b) => (RANK.indexOf(b) > RANK.indexOf(a) ? b : a), 'clear');
+    wxIcon.innerHTML = iconSvg(worst, j.current.is_day === 1);
+  } catch (e) {
+    showTemp(null);
+    wxIcon.innerHTML = '';
+  }
+}
+
+showTemp(null);
+tick();
+updateWeather();
+setInterval(updateWeather, 15 * 60 * 1000);
+// Einmal täglich neu laden, damit die Seite über Wochen stabil läuft
+setInterval(() => location.reload(), 24 * 60 * 60 * 1000);
+</script>
+</body>
+</html>
